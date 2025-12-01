@@ -1,0 +1,45 @@
+---
+title: "quadratic"
+author: "Kellianne Ng"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cars}
+#Load Packages 
+library(readr)
+library(dplyr)
+library(lubridate)
+library(lmtest)
+library(sandwich)
+library(tseries)
+library(dynlm)
+```
+
+# Prepare and clean the data
+```{r}
+file_path = "../data/sp500_vix_returns.csv"
+df = read.csv(file_path)
+df = df %>%
+  arrange(Date) %>%
+  na.omit()
+```
+
+# Build Quadratic Regression 
+```{r}
+model_quad <- lm(rsp ~ rvix + I(rvix^2), data = df)
+model_lin <- lm(rsp ~ rvix, data = df)
+summary(model_quad)
+bgtest(model_quad, order = 20)
+```
+
+# HAC robust coefficients 
+```{r}
+coeftest(model_quad, vcov = NeweyWest(model_quad, lag = 20, prewhite = FALSE))
+
+```

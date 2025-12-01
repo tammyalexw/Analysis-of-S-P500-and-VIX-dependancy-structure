@@ -1,0 +1,119 @@
+---
+title: "AR_model"
+author: "Kellianne Ng"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cars}
+#Load Packages 
+library(readr)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(lmtest)
+library(sandwich)
+library(tseries)
+library(forecast)
+library(dynlm)
+```
+
+# Prepare and clean the data
+```{r}
+file_path = "../data/sp500_vix_returns.csv"
+df = read.csv(file_path)
+df = df %>%
+  arrange(Date) %>%
+  na.omit()
+
+summary(df)
+```
+
+# Test for stationary using Augmented Dickey Fuller (ADF) 
+```{r}
+# ADF test for rsp
+adf_rsp = adf.test(df$rsp)
+adf_rsp
+
+# ADF test for rvix
+adf_rvix = adf.test(df$rvix)
+adf_rvix
+```
+ADF tests strongly rejects H0 for both rsp & rvix returns, indicating that these return series are stationary.
+
+# Select AR(p) by BIC and fit the model
+```{r}
+select_ar_bic <- function(y, max_p = 10) {
+  y <- na.omit(as.numeric(y))
+  
+  best_bic  <- Inf
+  best_p    <- 0
+  best_fit  <- NULL
+  
+  for (p in 0:max_p) {
+    fit <- stats::arima(y, order = c(p, 0, 0),
+                        include.mean = TRUE, method = "ML")
+    bic_val <- BIC(fit)
+    
+    if (bic_val < best_bic) {
+      best_bic <- bic_val
+      best_p   <- p
+      best_fit <- fit
+    }
+  }
+  
+  list(best_p = best_p,
+       best_bic = best_bic,
+       best_fit = best_fit)
+}
+
+```
+
+
+# Fit AR model for S&P500 returns
+```{r}
+# AR model for SP500 returns
+rsp_res <- select_ar_bic(df$rsp, max_p = 10)
+
+rsp_res$best_p      # chosen lag order p for SP500
+rsp_res$best_bic    # BIC value
+
+rsp_ar <- rsp_res$best_fit            
+coeftest(rsp_ar)  # prints AR coefficients etc.
+summary(ar1_dyn)$adj.r.squared #adjusted R^2
+```
+
+# Residual diagnostics - BG test to check for serial correlation in the residuals 
+```{r}
+z_rsp = zoo(df["rsp"], order.by = df$Date)
+
+res_ar = residuals(rsp_ar)
+
+# Residual diagnostics - BG Test 
+ar1_dyn <- dynlm(rsp ~ L(rsp, 1), data = z_rsp)
+bgtest(ar1_dyn, order = 20)
+```
+
+# HAC Robust Standard errors since serial correlation 
+```{r}
+hac_lag = 20
+vcov_hac_ar1 = NeweyWest(ar1_dyn,
+                          lag       = hac_lag,
+                          prewhite  = FALSE,
+                          adjust    = TRUE)
+
+coeftest(ar1_dyn, vov. = vcov_hac_ar1)
+
+```
+
+# R square
+```{r}
+summary(ar1_dyn)$r.squared  #R^2
+summary(ar1_dyn)$adj.r.squared #adjusted R^2
+
+```
